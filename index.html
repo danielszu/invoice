@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>勞務報酬單填寫工具 2.0</title>
+  
+  <!-- PWA 必備 Meta Tags -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="勞報單">
+  <link rel="apple-touch-icon" href="./icon-192x192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { font-family: 'Noto Sans TC', sans-serif; background: #f0f0f0; height: 100vh; overflow: hidden; }
+    #app { position: relative; height: 100vh; }
+
+    /* ══════════ EDITOR DRAWER ══════════ */
+    #editor {
+      position: fixed;
+      top: 0; left: 0;
+      width: 360px; height: 100vh;
+      background: #fff;
+      overflow-y: auto;
+      border-right: 1px solid #e0e0e0;
+      display: flex; flex-direction: column;
+      z-index: 50;
+      transform: translateX(0);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #editor.collapsed { transform: translateX(-360px); }
+
+    /* ══════════ DRAWER TOGGLE BUTTON ══════════ */
+    #drawer-toggle {
+      position: fixed;
+      top: 50%; left: 360px;
+      transform: translateY(-50%);
+      z-index: 51;
+      width: 28px; height: 52px;
+      background: #2563eb; color: #fff;
+      border: none;
+      border-radius: 0 10px 10px 0;
+      cursor: pointer;
+      font-size: 17px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 2px 0 10px rgba(37,99,235,0.28);
+      transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+    }
+    #drawer-toggle.collapsed { left: 0; }
+
+    /* ══════════ EDITOR INNER ══════════ */
+    .editor-header {
+      padding: 14px 18px 12px;
+      border-bottom: 1px solid #eee;
+      background: #fafafa;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .editor-header h1 { font-size: 15px; font-weight: 600; color: #222; }
+    #draft-status { font-size: 11px; color: #aaa; margin-top: 3px; }
+    .editor-body { padding: 14px 18px; flex: 1; }
+    .section { margin-bottom: 18px; }
+    .section-title {
+      font-size: 11px; font-weight: 600; color: #999;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 10px; padding-bottom: 6px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .section-title.collapsible { cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .field { margin-bottom: 9px; }
+    .field label { display: block; font-size: 11px; color: #777; margin-bottom: 3px; }
+    .field label .hint { color: #bbb; }
+    .field input[type="text"],
+    .field input[type="date"],
+    .field input[type="number"] {
+      width: 100%; padding: 6px 9px;
+      border: 1px solid #ddd; border-radius: 6px;
+      font-size: 13px; font-family: 'Noto Sans TC', sans-serif;
+      color: #333; background: #fff; transition: border-color 0.15s;
+    }
+    .field input:focus { outline: none; border-color: #3b82f6; }
+    .field-row { display: flex; gap: 8px; }
+    .field-row .field { flex: 1; }
+    .checkboxes { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 2px; }
+    .checkboxes label { display: flex; align-items: center; gap: 5px; font-size: 13px; color: #444; cursor: pointer; }
+    .auto-field {
+      width: 100%; padding: 5px 9px;
+      background: #f7f7f7; border: 1px solid #eee; border-radius: 6px;
+      font-size: 13px; color: #555; line-height: 1.4;
+    }
+    .chinese-val { font-size: 13px; font-weight: 500; color: #222; }
+    .id-upload-pair { display: flex; gap: 8px; }
+    .id-upload-box {
+      flex: 1; border: 2px dashed #ddd; border-radius: 8px;
+      min-height: 72px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; transition: border-color 0.15s, background 0.15s;
+      overflow: hidden; padding: 6px;
+    }
+    .id-upload-box:hover { border-color: #3b82f6; background: #f0f6ff; }
+    .id-upload-box img { max-width: 100%; max-height: 80px; object-fit: contain; border-radius: 4px; }
+    .id-upload-box .hint { font-size: 11px; color: #bbb; margin-top: 4px; }
+    .id-upload-box .label { font-size: 11px; color: #888; margin-bottom: 4px; }
+    .sig-upload-box {
+      width: 100%; border: 2px dashed #ddd; border-radius: 8px;
+      min-height: 72px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      cursor: pointer; transition: border-color 0.15s, background 0.15s;
+      overflow: hidden; padding: 6px;
+    }
+    .sig-upload-box:hover { border-color: #3b82f6; background: #f0f6ff; }
+    .sig-upload-box img { max-width: 100%; max-height: 60px; object-fit: contain; }
+    .sig-upload-box .hint { font-size: 11px; color: #bbb; margin-top: 4px; }
+    .editor-footer {
+      padding: 12px 18px; border-top: 1px solid #eee;
+      display: flex; flex-direction: column; gap: 7px; background: #fafafa;
+    }
+    .btn {
+      padding: 9px 14px; border-radius: 7px; border: none; cursor: pointer;
+      font-size: 13px; font-family: 'Noto Sans TC', sans-serif;
+      font-weight: 500; transition: all 0.15s; text-align: center;
+    }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-row { display: flex; gap: 7px; }
+    .btn-row .btn { flex: 1; }
+    .btn-ghost { background: #f3f4f6; color: #374151; }
+    .btn-ghost:hover { background: #e5e7eb; }
+    .btn-danger { background: #fee2e2; color: #b91c1c; }
+    .btn-danger:hover { background: #fecaca; }
+
+    /* ══════════ DATE RANGE BUTTONS ══════════ */
+    .date-range-pair { display: flex; gap: 8px; }
+    .date-range-pair .drp-field { flex: 1; }
+    .drp-field label { display: block; font-size: 10px; color: #aaa; margin-bottom: 3px; }
+    .date-pick-btn {
+      width: 100%; padding: 6px 9px;
+      border: 1px solid #ddd; border-radius: 6px;
+      font-size: 12px; font-family: 'Noto Sans TC', sans-serif;
+      background: #fff; cursor: pointer; text-align: left;
+      min-height: 32px; line-height: 1.4;
+      transition: border-color 0.15s, background 0.15s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .date-pick-btn:hover { border-color: #3b82f6; }
+    .date-pick-btn.no-value { color: #bbb; }
+    .date-pick-btn.has-value { color: #333; }
+    .date-pick-btn.rp-active { border-color: #3b82f6; background: #eff6ff; }
+
+    /* ══════════ RANGE PICKER POPUP ══════════ */
+    #rp-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      z-index: 200;
+    }
+    #rp-popup {
+      display: none;
+      position: fixed;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+      padding: 16px;
+      z-index: 201;
+      width: 292px;
+    }
+    .rp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .rp-nav-btn {
+      background: none; border: none; cursor: pointer;
+      width: 30px; height: 30px; border-radius: 7px;
+      font-size: 18px; color: #555;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.1s;
+    }
+    .rp-nav-btn:hover { background: #f0f0f0; }
+    .rp-month-label { font-size: 14px; font-weight: 600; color: #111; }
+    .rp-weekdays {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      text-align: center; font-size: 11px; color: #aaa;
+      margin-bottom: 4px;
+    }
+    .rp-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+    .rp-day {
+      height: 34px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; cursor: pointer;
+      border-radius: 7px; color: #333;
+      transition: background 0.08s;
+      user-select: none;
+    }
+    .rp-day:hover:not(.rp-empty) { background: #dbeafe; }
+    .rp-empty { cursor: default; pointer-events: none; }
+    .rp-start, .rp-end {
+      background: #2563eb !important;
+      color: #fff !important;
+      font-weight: 600;
+    }
+    .rp-in-range { background: #dbeafe; border-radius: 0; }
+    .rp-hover-range { background: #eff6ff; border-radius: 0; }
+    .rp-start { border-radius: 7px 0 0 7px !important; }
+    .rp-end { border-radius: 0 7px 7px 0 !important; }
+    .rp-start.rp-end { border-radius: 7px !important; }
+    .rp-hover-end { background: #bfdbfe !important; border-radius: 0 7px 7px 0 !important; }
+    .rp-status {
+      margin-top: 10px; padding: 7px 10px;
+      background: #f8faff; border-radius: 7px;
+      font-size: 11px; color: #555; text-align: center; line-height: 1.6;
+    }
+    .rp-actions { display: flex; gap: 7px; margin-top: 8px; }
+    .rp-actions button {
+      flex: 1; padding: 7px 0; border-radius: 7px; border: none;
+      cursor: pointer; font-size: 12px;
+      font-family: 'Noto Sans TC', sans-serif; font-weight: 500;
+      transition: background 0.1s;
+    }
+    .rp-btn-clear { background: #f3f4f6; color: #6b7280; }
+    .rp-btn-clear:hover { background: #e5e7eb; }
+    .rp-btn-confirm { background: #2563eb; color: #fff; }
+    .rp-btn-confirm:hover { background: #1d4ed8; }
+
+    /* ══════════ PREVIEW ══════════ */
+    #preview-container {
+      position: fixed;
+      top: 0; left: 360px; right: 0; bottom: 0;
+      overflow: auto;
+      background: #d0d0d0;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 24px 24px 48px;
+      gap: 0;
+      transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #preview-container.full { left: 0; }
+
+    .page-wrapper {
+      position: relative;
+      flex-shrink: 0;
+      margin-bottom: 20px;
+    }
+    .form-page {
+      background: #fff;
+      width: 794px; height: 1123px;
+      overflow: hidden;
+      padding: 22px 36px 20px;
+      font-family: 'Noto Serif TC', '標楷體', 'DFKai-SB', serif;
+      font-size: 11px; color: #000;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.15);
+      transform-origin: top left;
+      position: relative;
+    }
+    .pg-note { text-align: right; font-size: 10px; margin-bottom: 3px; }
+    .pg-title {
+      text-align: center; font-size: 20px; font-weight: bold;
+      letter-spacing: 6px; margin-bottom: 8px;
+    }
+    .pg-top {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; margin-bottom: 6px;
+    }
+    .type-row { display: flex; gap: 16px; align-items: center; }
+    .cb {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 11px; height: 11px; border: 1px solid #000;
+      font-size: 9px; vertical-align: middle; line-height: 1; margin-right: 1px;
+    }
+    .otherline {
+      display: inline-block; border-bottom: 1px solid #000;
+      min-width: 80px; height: 13px; vertical-align: bottom;
+    }
+    .ftable { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .ftable td {
+      border: 1px solid #000; vertical-align: middle;
+      padding: 3px 7px; font-size: 11px; line-height: 1.5;
+    }
+    .ftable .cl { width: 22px; }
+    .ftable .cn { width: 114px; }
+    .ftable .cr { width: 198px; }
+    .slabel {
+      writing-mode: vertical-lr; text-orientation: upright;
+      text-align: center; font-size: 13px; font-weight: bold;
+      letter-spacing: 8px; padding: 6px 2px;
+    }
+    .natcell { vertical-align: top; padding: 8px 6px; font-size: 10.5px; line-height: 1.6; }
+    .natopt { display: flex; align-items: flex-start; gap: 3px; margin-bottom: 8px; }
+    .natopt:last-child { margin-bottom: 0; }
+    .uval { display: inline-block; border-bottom: 1px solid #000; min-width: 80px; }
+    .amtcell { vertical-align: top; padding: 10px 10px; line-height: 2.05; font-size: 11px; }
+    .taxcell { vertical-align: top; padding: 8px 7px; font-size: 10px; line-height: 1.7; }
+    .rcell { padding: 8px 12px; font-size: 11.5px; vertical-align: middle; }
+    .sigcell { padding: 8px 12px; vertical-align: middle; }
+    .notecell { padding: 5px 12px; font-size: 10.5px; text-align: right; vertical-align: middle; }
+    .officer { text-align: right; font-size: 11px; margin-top: 5px; }
+    #p_sig { max-height: 55px; max-width: 200px; object-fit: contain; vertical-align: middle; display: none; }
+    #p_sigLine { display: inline-block; border-bottom: 1px solid #000; width: 200px; height: 55px; vertical-align: middle; }
+    .id-outer {
+      width: 100%; border-collapse: collapse;
+      height: calc(1123px - 22px - 20px - 16px - 6px);
+    }
+    .id-title-cell {
+      text-align: center; font-size: 14px; font-weight: bold;
+      border: 1px solid #000; padding: 8px; height: 38px;
+    }
+    .id-head-cell {
+      border: 1px solid #000; text-align: center;
+      font-size: 13px; font-weight: bold;
+      width: 50%; padding: 6px 0; height: 36px;
+    }
+    .id-body-cell {
+      border: 1px solid #000; vertical-align: middle; text-align: center; padding: 10px;
+    }
+    .id-img { max-width: 100%; max-height: 880px; object-fit: contain; }
+    .id-ph { color: #ccc; font-size: 12px; font-family: 'Noto Sans TC', sans-serif; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Drawer Toggle -->
+  <button id="drawer-toggle" onclick="toggleEditor()" title="展開／收合編輯器">≡</button>
+
+  <!-- ══════════════════ EDITOR ══════════════════ -->
+  <div id="editor">
+    <div class="editor-header">
+      <h1>勞務報酬單填寫工具</h1>
+      <div id="draft-status"></div>
+    </div>
+
+    <div class="editor-body">
+
+      <!-- 本次勞務 -->
+      <div class="section">
+        <div class="section-title">本次勞務內容</div>
+        <div class="field">
+          <label>填表日期</label>
+          <input type="date" id="fillDate" oninput="update()">
+        </div>
+        <div class="field">
+          <label>報酬類型 <span class="hint">（可不勾）</span></label>
+          <div class="checkboxes">
+            <label><input type="checkbox" id="typeWage" onchange="update()"> 薪資</label>
+            <label>
+              <input type="checkbox" id="typeOther" onchange="update()"> 其他
+              <input type="text" id="typeOtherText" style="width:72px;margin-left:4px;" placeholder="說明" oninput="update()">
+            </label>
+          </div>
+        </div>
+        <div class="field">
+          <label>專案名稱</label>
+          <input type="text" id="projectName" placeholder="例：品牌識別設計專案" oninput="update()">
+        </div>
+
+        <!-- 服務期間 Range Picker -->
+        <div class="field">
+          <label>服務期間</label>
+          <div class="date-range-pair">
+            <div class="drp-field">
+              <label>起</label>
+              <button type="button" class="date-pick-btn no-value" id="btnStart" onclick="rpOpen('start')">請選擇</button>
+            </div>
+            <div class="drp-field">
+              <label>訖</label>
+              <button type="button" class="date-pick-btn no-value" id="btnEnd" onclick="rpOpen('end')">請選擇</button>
+            </div>
+          </div>
+          <input type="hidden" id="periodStart">
+          <input type="hidden" id="periodEnd">
+        </div>
+
+        <div class="field">
+          <label>訂單編號 <span class="hint">（選填）</span></label>
+          <input type="text" id="orderNum" oninput="update()">
+        </div>
+      </div>
+
+      <!-- 金額 -->
+      <div class="section">
+        <div class="section-title">領款金額</div>
+        <div class="field">
+          <label>支領金額（元）</label>
+          <input type="number" id="amount" min="0" step="1" placeholder="0" oninput="calcAndUpdate()">
+        </div>
+        <div class="field">
+          <label>代扣所得稅 % <span class="hint">（留空不扣，一般 10%）</span></label>
+          <input type="number" id="taxRate" min="0" max="100" step="0.01" placeholder="留空" oninput="calcAndUpdate()">
+        </div>
+        <div class="field">
+          <label>二代健保 % <span class="hint">（留空不扣，一般 2.11%）</span></label>
+          <input type="number" id="nhiRate" min="0" max="100" step="0.01" placeholder="留空" oninput="calcAndUpdate()">
+        </div>
+        <div class="field">
+          <label>代扣所得稅（自動計算）</label>
+          <div class="auto-field" id="disp_tax">—</div>
+        </div>
+        <div class="field">
+          <label>二代健保（自動計算）</label>
+          <div class="auto-field" id="disp_nhi">—</div>
+        </div>
+        <div class="field">
+          <label>支領淨額（自動計算）</label>
+          <div class="auto-field" id="disp_net">—</div>
+        </div>
+        <div class="field">
+          <label>中文大寫</label>
+          <div class="auto-field chinese-val" id="disp_cn">—</div>
+        </div>
+      </div>
+
+      <!-- 付款方式 -->
+      <div class="section">
+        <div class="section-title">付款方式</div>
+        <div class="checkboxes">
+          <label><input type="checkbox" id="pay_cash" onchange="update()"> 現金</label>
+          <label><input type="checkbox" id="pay_check" onchange="update()"> 支票</label>
+          <label><input type="checkbox" id="pay_transfer" onchange="update()"> 匯款</label>
+          <label><input type="checkbox" id="pay_coupon" onchange="update()"> 禮券</label>
+        </div>
+      </div>
+
+      <!-- 領款人資料 -->
+      <div class="section">
+        <div class="section-title collapsible" onclick="toggleSec('sec_personal','tog_personal')">
+          領款人資料 <span id="tog_personal">▾</span>
+        </div>
+        <div id="sec_personal">
+          <div class="field">
+            <label>姓名</label>
+            <input type="text" id="name" oninput="update()">
+          </div>
+          <div class="field">
+            <label>國籍</label>
+            <div class="checkboxes" style="flex-direction:column;gap:6px;">
+              <label><input type="radio" name="nat" value="local" onchange="update()"> 本國籍</label>
+              <label><input type="radio" name="nat" value="f183" onchange="update()"> 外國籍 在台滿 183 天</label>
+              <label><input type="radio" name="nat" value="f" onchange="update()"> 外國籍 在台未滿 183 天</label>
+            </div>
+          </div>
+          <div class="field">
+            <label>身分證字號</label>
+            <input type="text" id="idNum" oninput="update()">
+          </div>
+          <div class="field">
+            <label>聯絡電話</label>
+            <input type="text" id="phone" oninput="update()">
+          </div>
+          <div class="field">
+            <label>戶籍地址</label>
+            <input type="text" id="addr1" oninput="update()">
+          </div>
+          <div class="field">
+            <label>通訊地址</label>
+            <input type="text" id="addr2" oninput="update()">
+          </div>
+        </div>
+      </div>
+
+      <!-- 銀行資料 -->
+      <div class="section">
+        <div class="section-title collapsible" onclick="toggleSec('sec_bank','tog_bank')">
+          銀行資料 <span id="tog_bank">▾</span>
+        </div>
+        <div id="sec_bank">
+          <div class="field">
+            <label>銀行</label>
+            <input type="text" id="bank" oninput="update()">
+          </div>
+          <div class="field">
+            <label>帳號</label>
+            <input type="text" id="account" oninput="update()">
+          </div>
+          <div class="field">
+            <label>戶名</label>
+            <input type="text" id="bankName" oninput="update()">
+          </div>
+        </div>
+      </div>
+
+      <!-- 領款人簽名 -->
+      <div class="section">
+        <div class="section-title">領款人簽名</div>
+        <div class="sig-upload-box" onclick="document.getElementById('inp_sig').click()" ondrop="dropFile(event,'sig')" ondragover="event.preventDefault()">
+          <img id="thumb_sig" style="display:none">
+          <div class="hint" id="hint_sig">點擊或拖曳上傳簽名圖檔</div>
+          <input type="file" id="inp_sig" accept="image/*" style="display:none" onchange="loadImg('sig',this)">
+        </div>
+      </div>
+
+      <!-- 身分證影本 -->
+      <div class="section">
+        <div class="section-title">身分證影本</div>
+        <div class="id-upload-pair">
+          <div class="id-upload-box" onclick="document.getElementById('inp_front').click()" ondrop="dropFile(event,'front')" ondragover="event.preventDefault()">
+            <div class="label">正面</div>
+            <img id="thumb_front" style="display:none">
+            <div class="hint" id="hint_front">點擊或拖曳上傳</div>
+            <input type="file" id="inp_front" accept="image/*" style="display:none" onchange="loadImg('front',this)">
+          </div>
+          <div class="id-upload-box" onclick="document.getElementById('inp_back').click()" ondrop="dropFile(event,'back')" ondragover="event.preventDefault()">
+            <div class="label">反面</div>
+            <img id="thumb_back" style="display:none">
+            <div class="hint" id="hint_back">點擊或拖曳上傳</div>
+            <input type="file" id="inp_back" accept="image/*" style="display:none" onchange="loadImg('back',this)">
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /editor-body -->
+
+    <div class="editor-footer">
+      <button class="btn btn-primary" id="exportBtn" onclick="exportPDF()">匯出 PDF</button>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="saveDraft()">儲存草稿</button>
+        <button class="btn btn-danger" onclick="clearDraft()">清除草稿</button>
+      </div>
+    </div>
+  </div><!-- /editor -->
+
+  <!-- ══════════════════ RANGE PICKER ══════════════════ -->
+  <div id="rp-overlay" onclick="rpClose()"></div>
+  <div id="rp-popup">
+    <div class="rp-header">
+      <button class="rp-nav-btn" onclick="rpNav(-1)">‹</button>
+      <span class="rp-month-label" id="rpMonthLabel"></span>
+      <button class="rp-nav-btn" onclick="rpNav(1)">›</button>
+    </div>
+    <div class="rp-weekdays">
+      <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+    </div>
+    <div id="rpGrid" class="rp-grid"></div>
+    <div class="rp-status" id="rpStatus">請點選開始日期</div>
+    <div class="rp-actions">
+      <button class="rp-btn-clear" onclick="rpClear()">清除</button>
+      <button class="rp-btn-confirm" onclick="rpClose()">確定</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════ PREVIEW ══════════════════ -->
+  <div id="preview-container">
+
+    <!-- 第一頁 -->
+    <div class="page-wrapper" id="wrap1">
+    <div class="form-page" id="page1">
+      <div class="pg-note">2021.1.1起用</div>
+      <div class="pg-title">勞務報酬單</div>
+
+      <div class="pg-top">
+        <div class="type-row">
+          <span><span class="cb" id="p_cbWage"></span>薪資</span>
+          <span><span class="cb" id="p_cbOther"></span>其他<span class="otherline" id="p_otherText"></span></span>
+        </div>
+        <div>填表日期：<span id="p_fillDate"></span></div>
+      </div>
+
+      <table class="ftable">
+        <colgroup>
+          <col class="cl"><col class="cn"><col><col class="cr">
+        </colgroup>
+
+        <!-- 領款人基本資料 -->
+        <tr>
+          <td class="slabel" rowspan="4">領款人基本資料</td>
+          <td class="natcell" rowspan="4">
+            <div class="natopt"><span class="cb" id="p_natLocal"></span>&nbsp;本國籍</div>
+            <div class="natopt"><span class="cb" id="p_natF183"></span>&nbsp;外國籍 在台<br>&ensp;滿183天</div>
+            <div class="natopt"><span class="cb" id="p_natF"></span>&nbsp;外國籍 在台未<br>&ensp;滿183天</div>
+          </td>
+          <td colspan="2" style="height:32px;padding:4px 8px;">姓名：<span class="uval" id="p_name"></span></td>
+        </tr>
+        <tr>
+          <td style="height:52px;padding:4px 8px;vertical-align:top;">
+            身分證字號：<br><strong id="p_idNum" style="font-size:12px;letter-spacing:1px;"></strong>
+          </td>
+          <td style="padding:4px 8px;vertical-align:middle;">聯絡電話：<span id="p_phone"></span></td>
+        </tr>
+        <tr>
+          <td colspan="2" style="height:32px;padding:4px 8px;">戶籍地址：<span id="p_addr1"></span></td>
+        </tr>
+        <tr>
+          <td colspan="2" style="height:90px;padding:4px 8px;vertical-align:top;">通訊地址：<span id="p_addr2"></span></td>
+        </tr>
+
+        <!-- 勞務內容 -->
+        <tr>
+          <td class="slabel" rowspan="3">勞務內容</td>
+          <td colspan="3" style="height:58px;padding:5px 10px;">專案名稱：<span id="p_project"></span></td>
+        </tr>
+        <tr>
+          <td colspan="3" style="height:48px;padding:5px 10px;">期間：自&ensp;<span id="p_start"></span>&emsp;至&emsp;<span id="p_end"></span></td>
+        </tr>
+        <tr>
+          <td colspan="3" style="height:59px;padding:5px 10px;">訂單編號：<span id="p_order"></span></td>
+        </tr>
+
+        <!-- 領款金額 -->
+        <tr>
+          <td class="slabel">領款金額</td>
+          <td colspan="2" class="amtcell">
+            支領金額：新台幣 <span id="p_amt"></span> 元<br>
+            代扣所得稅（<span id="p_taxRate"></span>）：新台幣 <span id="p_tax"></span> 元<br>
+            二代健保（<span id="p_nhiRate"></span>）：新台幣 <span id="p_nhi"></span> 元<br>
+            支領淨額：新台幣 <span id="p_net"></span> 元<br>
+            付款方式：<span id="p_pay"></span><br>
+            銀　行：<span id="p_bank"></span>，<br>
+            帳號：<u id="p_account"></u><br>
+            戶　名：<u id="p_bankName"></u>
+          </td>
+          <td class="taxcell">
+            本國籍應扣繳稅額 ≤ 2,000者不預先扣繳。<br>
+            固定薪資(50)：查表(起扣點68,501)<br>
+            非固定薪資(50)：5%（起扣點40,001）<br>
+            執行業務報酬(9A)：10%（起扣點20,001）<br>
+            租賃所得(51)：10%（起扣點20,001）<br>
+            機會中獎獎金(91)：10%（起扣點20,001）<br><br>
+            二代健保：2.11%（起扣點20,000）
+          </td>
+        </tr>
+
+        <!-- 茲收到 -->
+        <tr>
+          <td colspan="4" class="rcell" style="height:58px;">
+            茲收到&emsp;支付本人之報酬，共計新台幣 <strong id="p_cn"></strong>。
+          </td>
+        </tr>
+
+        <!-- 領款人簽名 -->
+        <tr>
+          <td colspan="4" class="sigcell" style="height:110px;">
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;height:100%;">
+              <span>領款人：</span>
+              <span style="position:relative;display:inline-flex;align-items:center;">
+                <img id="p_sig">
+                <span id="p_sigLine"></span>
+              </span>
+              <span>（簽名及蓋章）</span>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 附件說明 -->
+        <tr>
+          <td colspan="4" class="notecell" style="height:30px;">
+            請附身分證影本（外籍人士請附居留證／護照影本）。
+          </td>
+        </tr>
+      </table>
+
+      <div class="officer">經辦人：＿ ＿ ＿ ＿ ＿</div>
+    </div><!-- /page1 -->
+    </div><!-- /wrap1 -->
+
+    <!-- 第二頁 -->
+    <div class="page-wrapper" id="wrap2">
+    <div class="form-page" id="page2">
+      <div class="pg-note">2021.1.1起用</div>
+      <table class="id-outer">
+        <tr>
+          <td colspan="2" class="id-title-cell">身分證（居留證／護照）影本黏貼處</td>
+        </tr>
+        <tr>
+          <td class="id-head-cell">正　面</td>
+          <td class="id-head-cell">反　面</td>
+        </tr>
+        <tr>
+          <td class="id-body-cell">
+            <img id="p_idFront" class="id-img" style="display:none">
+            <div class="id-ph" id="p_idFrontEmpty">請上傳正面影本</div>
+          </td>
+          <td class="id-body-cell">
+            <img id="p_idBack" class="id-img" style="display:none">
+            <div class="id-ph" id="p_idBackEmpty">請上傳反面影本</div>
+          </td>
+        </tr>
+      </table>
+    </div><!-- /page2 -->
+    </div><!-- /wrap2 -->
+
+  </div><!-- /preview-container -->
+</div><!-- /app -->
+
+<script>
+// ── PWA Service Worker 註冊 ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('Service Worker 註冊成功', reg))
+      .catch(err => console.error('Service Worker 註冊失敗', err));
+  });
+}
+
+// ── DEFAULTS ──
+const DEFAULTS = {
+  name: '斯彥鈞', idNum: 'A170148696', phone: '0963259680',
+  addr1: '台北市中山區江山里23鄰復興北路294巷10號4樓',
+  addr2: '台北市南港區舊莊街一段149號3樓之一',
+  bank: '國泰世華銀行古亭分行', account: '030506148657', bankName: '斯彥鈞',
+  nat: 'local'
+};
+
+const $ = id => document.getElementById(id);
+
+function todayISO() { return new Date().toISOString().split('T')[0]; }
+
+function toROC(iso) {
+  if (!iso) return '';
+  const [y,m,d] = iso.split('-').map(Number);
+  return `${y-1911}年${m}月${d}日`;
+}
+
+// ── 中文大寫 ──
+function toChinese(n) {
+  n = Math.floor(parseFloat(n));
+  if (!n || n <= 0) return '';
+  const D = ['零','壹','貳','參','肆','伍','陸','柒','捌','玖'];
+  function seg4(x) {
+    if (!x) return '';
+    const q=Math.floor(x/1000), b=Math.floor(x%1000/100), s=Math.floor(x%100/10), g=x%10;
+    let r='';
+    if(q) r+=D[q]+'仟';
+    if(b) r+=D[b]+'佰'; else if(q&&(s||g)) r+='零';
+    if(s) r+=D[s]+'拾'; else if((q||b)&&g) r+='零';
+    if(g) r+=D[g];
+    return r;
+  }
+  const yi=Math.floor(n/100000000), wan=Math.floor(n%100000000/10000), ge=n%10000;
+  let res='';
+  if(yi){ res+=seg4(yi)+'億'; if(!wan&&ge&&ge<1000) res+='零'; }
+  if(wan){ if(yi&&wan<1000) res+='零'; res+=seg4(wan)+'萬'; if(ge&&ge<1000) res+='零'; }
+  if(ge) res+=seg4(ge);
+  return res+'元整';
+}
+
+// ── DRAWER ──
+let editorOpen = true;
+
+function toggleEditor() {
+  editorOpen = !editorOpen;
+  $('editor').classList.toggle('collapsed', !editorOpen);
+  $('preview-container').classList.toggle('full', !editorOpen);
+  $('drawer-toggle').classList.toggle('collapsed', !editorOpen);
+  setTimeout(resizePreview, 320);
+}
+
+// Touch swipe to open/close
+let tsX = 0, tsY = 0;
+document.addEventListener('touchstart', e => {
+  tsX = e.touches[0].clientX;
+  tsY = e.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - tsX;
+  const dy = e.changedTouches[0].clientY - tsY;
+  if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+  if (dx > 0 && !editorOpen && tsX < 40) toggleEditor();
+  else if (dx < 0 && editorOpen) toggleEditor();
+}, { passive: true });
+
+// ── RANGE PICKER ──
+let rpStart = null;
+let rpEnd   = null;
+let rpHover = null;
+let rpMode  = 'start';
+let rpYear  = new Date().getFullYear();
+let rpMonth = new Date().getMonth();
+
+function rpOpen(which) {
+  rpMode = which;
+  const popup   = $('rp-popup');
+  const overlay = $('rp-overlay');
+  const trigger = $(which === 'start' ? 'btnStart' : 'btnEnd');
+  const rect    = trigger.getBoundingClientRect();
+
+  ['btnStart','btnEnd'].forEach(id => $(id).classList.remove('rp-active'));
+  trigger.classList.add('rp-active');
+
+  const popW = 292;
+  let left = rect.left;
+  let top  = rect.bottom + 6;
+  if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+  if (left < 8) left = 8;
+  if (top + 320 > window.innerHeight - 8) top = rect.top - 326;
+  popup.style.left = left + 'px';
+  popup.style.top  = top + 'px';
+
+  const ref = (which === 'end' && rpEnd) ? rpEnd
+            : (which === 'end' && rpStart) ? rpStart
+            : rpStart;
+  if (ref) {
+    const [y,m] = ref.split('-').map(Number);
+    rpYear = y; rpMonth = m - 1;
+  } else {
+    rpYear = new Date().getFullYear();
+    rpMonth = new Date().getMonth();
+  }
+
+  overlay.style.display = 'block';
+  popup.style.display   = 'block';
+  rpRender();
+}
+
+function rpClose() {
+  $('rp-overlay').style.display = 'none';
+  $('rp-popup').style.display   = 'none';
+  ['btnStart','btnEnd'].forEach(id => $(id).classList.remove('rp-active'));
+}
+
+function rpNav(dir) {
+  rpMonth += dir;
+  if (rpMonth > 11) { rpMonth = 0; rpYear++; }
+  if (rpMonth < 0)  { rpMonth = 11; rpYear--; }
+  rpRender();
+}
+
+function rpClickDay(iso) {
+  if (rpMode === 'end') {
+    if (rpStart && iso < rpStart) {
+      rpEnd = rpStart;
+      rpStart = iso;
+    } else {
+      rpEnd = iso;
+    }
+    rpSyncToInputs();
+    rpRender();
+    setTimeout(rpClose, 180);
+  } else {
+    rpStart = iso;
+    if (rpEnd && iso > rpEnd) {
+      rpEnd = null;
+    }
+    rpMode = 'end';
+    rpSyncToInputs();
+    rpRender();
+  }
+}
+
+function rpHoverDay(iso) {
+  if (!rpStart || rpEnd) return;
+  rpHover = iso;
+  
+  const days = document.querySelectorAll('#rpGrid .rp-day:not(.rp-empty)');
+  days.forEach(day => {
+    const dIso = day.getAttribute('data-iso');
+    day.classList.remove('rp-hover-range', 'rp-hover-end');
+    
+    if (iso > rpStart) {
+      if (dIso > rpStart && dIso < iso) {
+        day.classList.add('rp-hover-range');
+      } else if (dIso === iso) {
+        day.classList.add('rp-hover-end');
+      }
+    }
+  });
+}
+
+function rpLeaveDay() {
+  if (!rpStart || rpEnd) return;
+  rpHover = null;
+  
+  const days = document.querySelectorAll('#rpGrid .rp-day:not(.rp-empty)');
+  days.forEach(day => day.classList.remove('rp-hover-range', 'rp-hover-end'));
+}
+
+function rpClear() {
+  rpStart = null; rpEnd = null; rpHover = null;
+  rpSyncToInputs();
+  rpRender();
+}
+
+function rpSyncToInputs() {
+  $('periodStart').value = rpStart || '';
+  $('periodEnd').value   = rpEnd   || '';
+  rpUpdateBtns();
+  update();
+}
+
+function rpUpdateBtns() {
+  const bs = $('btnStart'), be = $('btnEnd');
+  if (rpStart) {
+    bs.textContent = toROC(rpStart);
+    bs.className = 'date-pick-btn has-value';
+  } else {
+    bs.textContent = '請選擇';
+    bs.className = 'date-pick-btn no-value';
+  }
+  if (rpEnd) {
+    be.textContent = toROC(rpEnd);
+    be.className = 'date-pick-btn has-value';
+  } else {
+    be.textContent = '請選擇';
+    be.className = 'date-pick-btn no-value';
+  }
+}
+
+function rpRender() {
+  const label = $('rpMonthLabel');
+  const grid  = $('rpGrid');
+  const status = $('rpStatus');
+
+  label.textContent = `${rpYear} 年 ${rpMonth + 1} 月`;
+
+  if (!rpStart)       status.textContent = '請點選開始日期';
+  else if (!rpEnd)    status.textContent = `起：${toROC(rpStart)}　→　請點選結束日期`;
+  else                status.textContent = `${toROC(rpStart)} ～ ${toROC(rpEnd)}`;
+
+  const firstDay    = new Date(rpYear, rpMonth, 1).getDay();
+  const daysInMonth = new Date(rpYear, rpMonth + 1, 0).getDate();
+
+  let html = '';
+  for (let i = 0; i < firstDay; i++) html += '<div class="rp-day rp-empty"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${rpYear}-${String(rpMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    let cls = 'rp-day';
+
+    const isStart = iso === rpStart;
+    const isEnd   = iso === rpEnd;
+    const inRange = rpStart && rpEnd && iso > rpStart && iso < rpEnd;
+
+    if (isStart) cls += ' rp-start';
+    if (isEnd)   cls += ' rp-end';
+    if (inRange) cls += ' rp-in-range';
+
+    html += `<div class="${cls}" data-iso="${iso}" onclick="rpClickDay('${iso}')" onmouseenter="rpHoverDay('${iso}')" onmouseleave="rpLeaveDay()">${d}</div>`;
+  }
+
+  grid.innerHTML = html;
+}
+
+// ── 計算 ──
+function calcAndUpdate() {
+  const amt  = parseFloat($('amount').value) || 0;
+  const taxR = parseFloat($('taxRate').value);
+  const nhiR = parseFloat($('nhiRate').value);
+  const hasTax = !isNaN(taxR) && taxR > 0;
+  const hasNhi = !isNaN(nhiR) && nhiR > 0;
+  const taxAmt = hasTax ? Math.round(amt*taxR/100) : 0;
+  const nhiAmt = hasNhi ? Math.round(amt*nhiR/100) : 0;
+  const net = amt - taxAmt - nhiAmt;
+  $('disp_tax').textContent = hasTax ? taxAmt.toLocaleString()+' 元' : '—';
+  $('disp_nhi').textContent = hasNhi ? nhiAmt.toLocaleString()+' 元' : '—';
+  $('disp_net').textContent = amt    ? net.toLocaleString()+' 元'    : '—';
+  $('disp_cn').textContent  = amt    ? toChinese(net)                : '—';
+  update();
+}
+
+// ── 更新預覽 ──
+function update() {
+  const wage=$('typeWage').checked, other=$('typeOther').checked;
+  $('p_cbWage').textContent  = wage  ? '✓' : '';
+  $('p_cbOther').textContent = other ? '✓' : '';
+  $('p_otherText').textContent = other ? $('typeOtherText').value : '';
+  $('p_fillDate').textContent = toROC($('fillDate').value);
+
+  $('p_project').textContent = $('projectName').value;
+  $('p_start').textContent   = toROC($('periodStart').value);
+  $('p_end').textContent     = toROC($('periodEnd').value);
+  $('p_order').textContent   = $('orderNum').value;
+
+  const amt  = parseFloat($('amount').value) || 0;
+  const taxR = parseFloat($('taxRate').value);
+  const nhiR = parseFloat($('nhiRate').value);
+  const hasTax = !isNaN(taxR) && taxR > 0;
+  const hasNhi = !isNaN(nhiR) && nhiR > 0;
+  const taxAmt = hasTax ? Math.round(amt*taxR/100) : 0;
+  const nhiAmt = hasNhi ? Math.round(amt*nhiR/100) : 0;
+  const net = amt - taxAmt - nhiAmt;
+
+  $('p_amt').textContent     = amt    ? amt.toLocaleString()      : '';
+  $('p_taxRate').textContent = hasTax ? taxR+' %'                 : '';
+  $('p_nhiRate').textContent = hasNhi ? nhiR+' %'                 : '';
+  $('p_tax').textContent     = hasTax ? taxAmt.toLocaleString()   : '';
+  $('p_nhi').textContent     = hasNhi ? nhiAmt.toLocaleString()   : '';
+  $('p_net').textContent     = amt    ? net.toLocaleString()      : '';
+  $('p_cn').textContent      = amt    ? toChinese(net)            : '';
+
+  const pays = [['pay_cash','現金'],['pay_check','支票'],['pay_transfer','匯款'],['pay_coupon','禮券']]
+    .map(([id,lbl]) => ($(id).checked?'☑':'□')+lbl);
+  $('p_pay').textContent = pays.join('　');
+
+  const nat = document.querySelector('input[name="nat"]:checked');
+  const nv = nat ? nat.value : '';
+  $('p_natLocal').textContent = nv==='local' ? '✓' : '';
+  $('p_natF183').textContent  = nv==='f183'  ? '✓' : '';
+  $('p_natF').textContent     = nv==='f'     ? '✓' : '';
+
+  $('p_name').textContent     = $('name').value;
+  $('p_idNum').textContent    = $('idNum').value;
+  $('p_phone').textContent    = $('phone').value;
+  $('p_addr1').textContent    = $('addr1').value;
+  $('p_addr2').textContent    = $('addr2').value;
+  $('p_bank').textContent     = $('bank').value;
+  $('p_account').textContent  = $('account').value;
+  $('p_bankName').textContent = $('bankName').value;
+
+  scheduleDraft();
+}
+
+// ── DRAFT ──
+const DRAFT_KEY = 'lbr_form_v2';
+let draftTimer;
+function scheduleDraft() { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 1500); }
+
+function saveDraft() {
+  const nat = document.querySelector('input[name="nat"]:checked');
+  const data = {
+    fillDate:$('fillDate').value, typeWage:$('typeWage').checked,
+    typeOther:$('typeOther').checked, typeOtherText:$('typeOtherText').value,
+    projectName:$('projectName').value,
+    periodStart:$('periodStart').value, periodEnd:$('periodEnd').value,
+    orderNum:$('orderNum').value,
+    amount:$('amount').value, taxRate:$('taxRate').value, nhiRate:$('nhiRate').value,
+    pay_cash:$('pay_cash').checked, pay_check:$('pay_check').checked,
+    pay_transfer:$('pay_transfer').checked, pay_coupon:$('pay_coupon').checked,
+    name:$('name').value, nat:nat?nat.value:'local',
+    idNum:$('idNum').value, phone:$('phone').value,
+    addr1:$('addr1').value, addr2:$('addr2').value,
+    bank:$('bank').value, account:$('account').value, bankName:$('bankName').value,
+    sig:    $('p_sig').getAttribute('src')      || '',
+    idFront:$('p_idFront').getAttribute('src') || '',
+    idBack: $('p_idBack').getAttribute('src')  || ''
+  };
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
+  const now = new Date();
+  $('draft-status').textContent = `已儲存 ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+
+function loadDraft() {
+  const raw = localStorage.getItem(DRAFT_KEY);
+  if (!raw) { initDefaults(); return; }
+  try {
+    const d = JSON.parse(raw);
+    $('fillDate').value       = d.fillDate || todayISO();
+    $('typeWage').checked     = !!d.typeWage;
+    $('typeOther').checked    = !!d.typeOther;
+    $('typeOtherText').value  = d.typeOtherText || '';
+    $('projectName').value    = d.projectName   || '';
+    $('periodStart').value    = d.periodStart   || '';
+    $('periodEnd').value      = d.periodEnd     || '';
+    $('orderNum').value       = d.orderNum      || '';
+    $('amount').value         = d.amount        || '';
+    $('taxRate').value        = d.taxRate       || '';
+    $('nhiRate').value        = d.nhiRate       || '';
+    $('pay_cash').checked     = !!d.pay_cash;
+    $('pay_check').checked    = !!d.pay_check;
+    $('pay_transfer').checked = !!d.pay_transfer;
+    $('pay_coupon').checked   = !!d.pay_coupon;
+    $('name').value     = d.name     || DEFAULTS.name;
+    $('idNum').value    = d.idNum    || DEFAULTS.idNum;
+    $('phone').value    = d.phone    || DEFAULTS.phone;
+    $('addr1').value    = d.addr1    || DEFAULTS.addr1;
+    $('addr2').value    = d.addr2    || DEFAULTS.addr2;
+    $('bank').value     = d.bank     || DEFAULTS.bank;
+    $('account').value  = d.account  || DEFAULTS.account;
+    $('bankName').value = d.bankName || DEFAULTS.bankName;
+    const natEl = document.querySelector(`input[name="nat"][value="${d.nat||'local'}"]`);
+    if (natEl) natEl.checked = true;
+    
+    rpStart = d.periodStart || null;
+    rpEnd   = d.periodEnd   || null;
+    rpUpdateBtns();
+    if (d.sig     && d.sig.startsWith('data:'))     setImg('sig',   d.sig);
+    if (d.idFront && d.idFront.startsWith('data:')) setImg('front', d.idFront);
+    if (d.idBack  && d.idBack.startsWith('data:'))  setImg('back',  d.idBack);
+  } catch(e) { initDefaults(); return; }
+  calcAndUpdate();
+}
+
+function initDefaults() {
+  $('fillDate').value = todayISO();
+  Object.entries(DEFAULTS).forEach(([k,v]) => {
+    if (k==='nat') {
+      const el = document.querySelector(`input[name="nat"][value="${v}"]`);
+      if (el) el.checked = true;
+    } else if ($(k)) $(k).value = v;
+  });
+  calcAndUpdate();
+}
+
+function clearDraft() {
+  if (!confirm('清除草稿後，本次填寫的專案資料將清空（個人與銀行資料保留）。確定嗎？')) return;
+  localStorage.removeItem(DRAFT_KEY);
+  ['projectName','orderNum','amount','taxRate','nhiRate','typeOtherText']
+    .forEach(id => { $(id).value = ''; });
+  $('fillDate').value = todayISO();
+  ['typeWage','typeOther','pay_cash','pay_check','pay_transfer','pay_coupon']
+    .forEach(id => { $(id).checked = false; });
+  rpStart = null; rpEnd = null;
+  $('periodStart').value = '';
+  $('periodEnd').value   = '';
+  rpUpdateBtns();
+  calcAndUpdate();
+  $('draft-status').textContent = '草稿已清除';
+}
+
+function toggleSec(secId, togId) {
+  const el=$(secId), tog=$(togId);
+  const hidden = el.style.display==='none';
+  el.style.display = hidden ? '' : 'none';
+  tog.textContent  = hidden ? '▾' : '▸';
+}
+
+function loadImg(type, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = e => setImg(type, e.target.result);
+  r.readAsDataURL(file);
+}
+
+function dropFile(e, type) {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const r = new FileReader();
+  r.onload = ev => setImg(type, ev.target.result);
+  r.readAsDataURL(file);
+}
+
+function setImg(type, src) {
+  if (type === 'sig') {
+    $('p_sig').src = src;
+    $('p_sig').style.display = 'block';
+    $('p_sigLine').style.display = 'none';
+    $('thumb_sig').src = src;
+    $('thumb_sig').style.display = 'block';
+    $('hint_sig').style.display = 'none';
+  } else {
+    const isF   = type === 'front';
+    const pImg  = $(isF ? 'p_idFront'     : 'p_idBack');
+    const pMpty = $(isF ? 'p_idFrontEmpty' : 'p_idBackEmpty');
+    const thumb = $(isF ? 'thumb_front'    : 'thumb_back');
+    const hint  = $(isF ? 'hint_front'     : 'hint_back');
+    pImg.src  = src;  pImg.style.display  = 'block';
+    pMpty.style.display = 'none';
+    thumb.src = src;  thumb.style.display = 'block';
+    hint.style.display  = 'none';
+  }
+  scheduleDraft();
+}
+
+function resizePreview() {
+  const container = $('preview-container');
+  const availW = container.clientWidth - 48;
+  const scale = Math.min(1, availW / 794);
+  ['page1','page2'].forEach((pid, i) => {
+    const page = $(pid);
+    const wrap = $('wrap' + (i + 1));
+    page.style.transform = `scale(${scale})`;
+    page.style.transformOrigin = 'top left';
+    wrap.style.width  = Math.round(794 * scale) + 'px';
+    wrap.style.height = Math.round(1123 * scale) + 'px';
+  });
+}
+
+async function exportPDF() {
+  const btn = $('exportBtn');
+  btn.textContent = '處理中…';
+  btn.disabled = true;
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'p', unit:'mm', format:'a4' });
+
+    const capturePage = async (el, isFirst) => {
+      const savedTransform = el.style.transform;
+      const savedOrigin    = el.style.transformOrigin;
+      el.style.transform       = 'scale(1)';
+      el.style.transformOrigin = 'top left';
+
+      const canvas = await html2canvas(el, {
+        scale: 2, useCORS: true, allowTaint: true,
+        backgroundColor: '#ffffff', logging: false,
+        width: 794, height: 1123, windowWidth: 794, windowHeight: 1123
+      });
+
+      el.style.transform       = savedTransform;
+      el.style.transformOrigin = savedOrigin;
+
+      const img = canvas.toDataURL('image/jpeg', 0.95);
+      if (!isFirst) pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297);
+    };
+
+    await capturePage($('page1'), true);
+    await capturePage($('page2'), false);
+
+    const proj = $('projectName').value.trim() || '勞務報酬單';
+    pdf.save(`${proj}_勞務報酬單.pdf`);
+  } catch(e) {
+    alert('匯出失敗：' + e.message);
+    console.error(e);
+  }
+  btn.textContent = '匯出 PDF';
+  btn.disabled = false;
+}
+
+window.addEventListener('load', () => {
+  loadDraft();
+  resizePreview();
+});
+window.addEventListener('resize', resizePreview);
+</script>
+</body>
+</html>

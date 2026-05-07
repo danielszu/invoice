@@ -1,0 +1,21 @@
+{
+  "name": "勞務報酬單填寫工具 2.0",
+  "short_name": "勞報單",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f0f0f0",
+  "theme_color": "#2563eb",
+  "description": "方便快速填寫並產生勞務報酬單 PDF 的工具",
+  "icons": [
+    {
+      "src": "./icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
